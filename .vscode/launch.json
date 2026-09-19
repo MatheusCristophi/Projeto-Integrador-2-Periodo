@@ -1,0 +1,14 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Wokwi GDB",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "build/firmware.hex",
+      "MIMode": "gdb",
+      "miDebuggerPath": "/usr/local/bin/xtensa-esp32-elf-gdb",
+      "miDebuggerServerAddress": "localhost:3333"
+    }
+  ]
+}
