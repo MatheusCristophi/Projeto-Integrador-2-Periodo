@@ -1,3 +1,5 @@
+#include <WiFi.h>
+#include <HTTPClient.h>
 #include <esp_sleep.h>
 
 #define PIN_TRIG 5
@@ -11,6 +13,17 @@ const unsigned long TIMEOUT_ECO_US = 30000;
 
 const float LIMIAR_NIVEL2_CM = 50.0;
 const float LIMIAR_NIVEL3_CM = 20.0;
+
+// ---- Varáveis para realizar a conexão por Wifi ----
+const char* WIFI_SSID  = "SEU_WIFI";
+const char* WIFI_SENHA = "SUA_SENHA";
+const unsigned long TIMEOUT_WIFI_MS = 15000;
+
+// ---- Váriaveis para realizar a conexão com a api ----
+const char* API_URL = "http://192.168.0.10:3000/leituras";  // placeholder
+const char* SENSOR_ID = "sensor-rio-01";
+const char* API_KEY = "SUA_CHAVE_AQUI";
+const int   TIMEOUT_HTTP_MS = 10000;
 
 // ---- Intervalo de deep sleep por nível (segundos) ----
 const uint64_t SLEEP_NIVEL1_S = 5 * 60;  // Nível 1: 5 minutos
@@ -67,6 +80,33 @@ void entrarEmDeepSleep(uint64_t segundos) {
   esp_deep_sleep_start();  // não retorna: ao acordar, o ESP32 reinicia no setup()
 }
 
+bool conectarWifi() {
+  Serial.print("Conectando ao WiFi");
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_SENHA);
+
+  unsigned long inicio = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - inicio < TIMEOUT_WIFI_MS) {
+    delay(250);
+    Serial.print(".");
+  }
+  Serial.println();
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.print("WiFi conectado. IP: ");
+    Serial.println(WiFi.localIP());
+    return true;
+  }
+
+  Serial.println("Falha ao conectar no WiFi.");
+  return false;
+}
+
+void desligarWifi() {
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_OFF);
+}
+
 void setup() {
   Serial.begin(115200);
   pinMode(PIN_TRIG, OUTPUT);
@@ -94,7 +134,7 @@ void setup() {
     Serial.print(" cm | Nivel: ");
     Serial.println(nivel);
   }
-  
+
   entrarEmDeepSleep(intervaloSleepSegundos(nivel));
 }
 
