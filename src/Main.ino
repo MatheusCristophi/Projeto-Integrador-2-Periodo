@@ -4,6 +4,8 @@
 
 #define PIN_TRIG 5
 #define PIN_ECHO 18
+#define PIN_LIGADO_DESLIGADO 14
+#define ESTADO_WIFI false
 
 // Velocidade do som no ar (~20 °C): 343 m/s = 0,0343 cm/µs
 const float VELOCIDADE_SOM_CM_US = 0.0343;
@@ -15,13 +17,14 @@ const float LIMIAR_NIVEL2_CM = 50.0;
 const float LIMIAR_NIVEL3_CM = 20.0;
 
 // ---- Varáveis para realizar a conexão por Wifi ----
-const char *WIFI_SSID = "SEU_WIFI";
-const char *WIFI_SENHA = "SUA_SENHA";
+const char *WIFI_SSID = "Iphone 17 Pro Max do Murilo";
+const char *WIFI_SENHA = "mumudatete";
 const unsigned long TIMEOUT_WIFI_MS = 15000;
 
 // ---- Váriaveis para realizar a conexão com a api ----
-const char *API_URL = "http://192.168.0.10:3000/leituras"; // placeholder
-const char *SENSOR_ID = "sensor-rio-01";
+// ---- /online/educacional / fagoc ----
+const char *API_URL = "https:ocurriculo.online/api/leitura/sensor/{sensor}"; // placeholder
+const char *SENSOR_ID = "x01234567";
 const char *API_KEY = "SUA_CHAVE_AQUI";
 const int TIMEOUT_HTTP_MS = 10000;
 
@@ -109,11 +112,15 @@ bool conectarWifi()
     {
         Serial.print("WiFi conectado. IP: ");
         Serial.println(WiFi.localIP());
+        ESTADO_WIFI = true;
         return true;
     }
 
     Serial.println("Falha ao conectar no WiFi.");
+    ESTADO_WIFI = false
     return false;
+
+
 }
 
 void desligarWifi()
@@ -136,6 +143,8 @@ bool enviarLeitura(float distanciaCm, int nivel) {
   http.begin(API_URL);
   http.setTimeout(TIMEOUT_HTTP_MS);
   http.addHeader("Content-Type", "application/json");
+  http.addHeader("Authentication", "817573eda9eb5f46e637b2831eb458fa6afceacaed60efb8a0132626beb2c3c9");
+
 
   int codigo = http.POST(json);
   http.end();
@@ -182,17 +191,27 @@ void setup()
         Serial.print(" cm | Nivel: ");
         Serial.println(nivel);
 
+        pinMode(PIN_LIGADO_DESLIGADO, OUTPUT);
+
         if (conectarWifi())
         {
             enviarLeitura(distanciaCm, nivel);
         }
     }
+  
 
-    desligarWifi();
+    desligarWifi(); 
 
     entrarEmDeepSleep(intervaloSleepSegundos(nivel));
 }
 
 void loop()
 {
+  if(ESTADO_WIFI == true){
+    digitalWrite(PIN_LIGADO_DESLIGADO, LOW);
+  }
+  else
+  {
+    digitalWrite(PIN_LIGADO_DESLIGADO, HIGH);
+  }
 }

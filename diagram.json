@@ -10,6 +10,14 @@
       "top": -113.7,
       "left": 120.7,
       "attrs": { "distance": "200" }
+    },
+    { "type": "wokwi-led", "id": "led1", "top": 63.6, "left": -121, "attrs": { "color": "red" } },
+    {
+      "type": "wokwi-resistor",
+      "id": "r1",
+      "top": 128.75,
+      "left": -76.8,
+      "attrs": { "value": "1000" }
     }
   ],
   "connections": [
@@ -18,7 +26,10 @@
     [ "ultrasonic1:VCC", "esp:5V", "red", [ "v0" ] ],
     [ "ultrasonic1:GND", "esp:GND.2", "black", [ "v0" ] ],
     [ "ultrasonic1:TRIG", "esp:5", "green", [ "v0" ] ],
-    [ "ultrasonic1:ECHO", "esp:18", "blue", [ "v0" ] ]
+    [ "ultrasonic1:ECHO", "esp:18", "blue", [ "v0" ] ],
+    [ "led1:C", "esp:GND.1", "black", [ "v0" ] ],
+    [ "led1:A", "r1:1", "green", [ "v0" ] ],
+    [ "r1:2", "esp:14", "green", [ "v0" ] ]
   ],
   "dependencies": {}
 }
