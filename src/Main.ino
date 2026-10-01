@@ -67,3 +67,36 @@ void entrarEmDeepSleep(uint64_t segundos) {
   esp_deep_sleep_start();  // não retorna: ao acordar, o ESP32 reinicia no setup()
 }
 
+void setup() {
+  Serial.begin(115200);
+  pinMode(PIN_TRIG, OUTPUT);
+  pinMode(PIN_ECHO, INPUT);
+
+  contadorLeituras++;
+  Serial.print("Leitura #");
+  Serial.println(contadorLeituras);
+
+  delay(TEMPO_ESTABILIZACAO_MS);
+
+  unsigned long tempoUs = medirTempoEco();
+  int nivel = 1;  // sem eco: mantém o intervalo normal
+
+  if (tempoUs == 0) {
+    Serial.println("Sem eco (fora de alcance ou erro de leitura)");
+  } else {
+    float distanciaCm = tempoParaDistanciaCm(tempoUs);
+    nivel = classificarNivel(distanciaCm);
+
+    Serial.print("Tempo: ");
+    Serial.print(tempoUs);
+    Serial.print(" us | Distancia: ");
+    Serial.print(distanciaCm, 1);
+    Serial.print(" cm | Nivel: ");
+    Serial.println(nivel);
+  }
+  
+  entrarEmDeepSleep(intervaloSleepSegundos(nivel));
+}
+
+void loop() {
+}
