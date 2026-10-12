@@ -1,5 +1,6 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <HTTPClienteSecure.h>
 #include <esp_sleep.h>
 
 #define PIN_TRIG 5
@@ -17,14 +18,14 @@ const float LIMIAR_NIVEL2_CM = 50.0;
 const float LIMIAR_NIVEL3_CM = 20.0;
 
 // ---- Varáveis para realizar a conexão por Wifi ----
-const char *WIFI_SSID = "Iphone 17 Pro Max do Murilo";
-const char *WIFI_SENHA = "mumudatete";
+const char *WIFI_SSID = "Wifi_Nome";
+const char *WIFI_SENHA = "Senha_Wifi";
 const unsigned long TIMEOUT_WIFI_MS = 15000;
 
 // ---- Váriaveis para realizar a conexão com a api ----
 // ---- /online/educacional / fagoc ----
-const char *API_URL = "https:ocurriculo.online/api/leitura/sensor/{sensor}"; // placeholder
-const char *SENSOR_ID = "x01234567";
+const char *SENSOR_ID = "X0000042";
+const char *API_URL = "https://ocurriculo.online/api/leitura/sensor/X0000042/NIVEL"; // placeholder
 const char *API_KEY = "SUA_CHAVE_AQUI";
 const int TIMEOUT_HTTP_MS = 10000;
 
@@ -101,6 +102,7 @@ bool conectarWifi()
     WiFi.begin(WIFI_SSID, WIFI_SENHA);
 
     unsigned long inicio = millis();
+
     while (WiFi.status() != WL_CONNECTED && millis() - inicio < TIMEOUT_WIFI_MS)
     {
         delay(250);
@@ -110,14 +112,18 @@ bool conectarWifi()
 
     if (WiFi.status() == WL_CONNECTED)
     {
+        ESTADO_WIFI = true;
+
         Serial.print("WiFi conectado. IP: ");
         Serial.println(WiFi.localIP());
-        ESTADO_WIFI = true;
+
+        digitalWrite(PIN_LIGADO_DESLIGADO, LOW)
         return true;
     }
 
+    ESTADO_WIFI = false;
+
     Serial.println("Falha ao conectar no WiFi.");
-    ESTADO_WIFI = false
     return false;
 
 
@@ -127,41 +133,111 @@ void desligarWifi()
 {
     WiFi.disconnect(true);
     WiFi.mode(WIFI_OFF);
+    ESTADO_WIFI = false;
+}
+
+bool obterDataHora(char* destino, size_t tamanho)
+{
+    // Horário de Brasília: UTC-3
+    configTime(
+        0,
+        0,
+        "pool.ntp.org",
+        "time.google.com"
+    );
+
+    setenv("TZ", "BRT3", 1);
+    tzset();
+
+    struct tm infoHora;
+
+    if (!getLocalTime(&infoHora, 10000)) {
+        Serial.println("Nao foi possivel sincronizar o horario.");
+        return false;
+    }
+
+    strftime(
+        destino,
+        tamanho,
+        "%Y-%m-%d %H:%M:%S",
+        &infoHora
+    );
+
+    return true;
 }
 
 bool enviarLeitura(float distanciaCm, int nivel) {
-  char json[160];
-  snprintf(json, sizeof(json),
-           "{\"sensorId\":\"%s\",\"distanciaCm\":%.1f,\"nivel\":%d,\"leitura\":%lu}",
-           SENSOR_ID, distanciaCm, nivel, (unsigned long)contadorLeituras);
+    char dataHora[24];
 
-  Serial.print("POST ");
-  Serial.println(API_URL);
-  Serial.println(json);
+    if (!obterDataHora(dataHora, sizeof(dataHora))) {
+        Serial.println("Leitura nao enviada: horario indisponivel.");
+        return false;
+    }
 
-  HTTPClient http;
-  http.begin(API_URL);
-  http.setTimeout(TIMEOUT_HTTP_MS);
-  http.addHeader("Content-Type", "application/json");
-  http.addHeader("Authentication", "817573eda9eb5f46e637b2831eb458fa6afceacaed60efb8a0132626beb2c3c9");
+    char json[256];
 
+    snprintf(
+        json,
+        sizeof(json),
+        "{"
+          "\"id_sensor\":\"%s\","
+          "\"cota_adotada\":\"%.1f\","
+          "\"nome_serie\":\"NIVEL\","
+          "\"unidade_medida\":\"CM\","
+          "\"data_hora\":\"%s\","
+          "\"modelo_sensor\":\"HC-SR04\","
+          "\"tipo_sensor\":\"ULTRASSOM\""
+        "}",
+        SENSOR_ID,
+        distanciaCm,
+        dataHora
+    );
 
-  int codigo = http.POST(json);
-  http.end();
+    Serial.println("Enviando leitura para a API:");
+    Serial.println(json);
 
-  if (codigo > 0) {
-    Serial.print("Resposta da API: ");
-    Serial.println(codigo);
-    return codigo >= 200 && codigo < 300;
-  }
+    WiFiClientSecure clienteSeguro;
+    clienteSeguro.setInsecure();
 
-  Serial.print("Erro na requisicao: ");
-  Serial.println(HTTPClient::errorToString(codigo));
-  return false;
+    HTTPClient http;
+    http.setTimeout(TIMEOUT_HTTP_MS);
+
+    if (!http.begin(clienteSeguro, API_URL)) {
+        Serial.println("Falha ao iniciar a requisicao HTTP.");
+        return false;
+    }
+
+    http.addHeader("Content-Type", "application/json");
+    http.addHeader("Authorization", API_KEY)
+
+    int codigo = http.POST(
+        reinterpret_cast<uint8_t*>(json),
+        strlen(json)
+    );
+
+    bool sucesso = false;
+
+    if (codigo > 0) {
+        Serial.print("Status HTTP: ");
+        Serial.println(codigo);
+
+        String resposta = http.getString();
+
+        Serial.print("Resposta: ");
+        Serial.println(resposta);
+
+        sucesso = (codigo >= 200 && codigo < 300);
+    } else {
+        Serial.print("Erro HTTP: ");
+        Serial.println(HTTPClient::errorToString(codigo));
+    }
+
+    http.end();
+
+    return sucesso;
 }
 
-void setup()
-{
+void setup(){
     Serial.begin(115200);
     pinMode(PIN_TRIG, OUTPUT);
     pinMode(PIN_ECHO, INPUT);
@@ -193,9 +269,14 @@ void setup()
 
         pinMode(PIN_LIGADO_DESLIGADO, OUTPUT);
 
-        if (conectarWifi())
-        {
-            enviarLeitura(distanciaCm, nivel);
+        if (conectarWifi()) {
+            bool enviado = enviarLeitura(distanciaCm, nivel);
+
+            if (enviado) {
+                Serial.println("Leitura enviada com sucesso.");
+            } else {
+                Serial.println("Falha ao enviar a leitura.");
+            }
         }
     }
   
@@ -205,13 +286,6 @@ void setup()
     entrarEmDeepSleep(intervaloSleepSegundos(nivel));
 }
 
-void loop()
-{
-  if(ESTADO_WIFI == true){
-    digitalWrite(PIN_LIGADO_DESLIGADO, LOW);
-  }
-  else
-  {
-    digitalWrite(PIN_LIGADO_DESLIGADO, HIGH);
-  }
+void loop(){
+
 }
