@@ -1,12 +1,13 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
-#include <HTTPClienteSecure.h>
+#include <WiFiClientSecure.h>
 #include <esp_sleep.h>
 
 #define PIN_TRIG 5
 #define PIN_ECHO 18
 #define PIN_LIGADO_DESLIGADO 14
-#define ESTADO_WIFI false
+
+bool ESTADO_WIFI = false;
 
 // Velocidade do som no ar (~20 °C): 343 m/s = 0,0343 cm/µs
 const float VELOCIDADE_SOM_CM_US = 0.0343;
@@ -117,7 +118,7 @@ bool conectarWifi()
         Serial.print("WiFi conectado. IP: ");
         Serial.println(WiFi.localIP());
 
-        digitalWrite(PIN_LIGADO_DESLIGADO, LOW)
+        digitalWrite(PIN_LIGADO_DESLIGADO, LOW);
         return true;
     }
 
@@ -138,7 +139,6 @@ void desligarWifi()
 
 bool obterDataHora(char* destino, size_t tamanho)
 {
-    // Horário de Brasília: UTC-3
     configTime(
         0,
         0,
@@ -208,7 +208,7 @@ bool enviarLeitura(float distanciaCm, int nivel) {
     }
 
     http.addHeader("Content-Type", "application/json");
-    http.addHeader("Authorization", API_KEY)
+    http.addHeader("Authorization", API_KEY);
 
     int codigo = http.POST(
         reinterpret_cast<uint8_t*>(json),
@@ -279,7 +279,6 @@ void setup(){
             }
         }
     }
-  
 
     desligarWifi(); 
 
