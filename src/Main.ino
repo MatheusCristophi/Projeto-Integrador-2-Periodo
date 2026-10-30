@@ -4,15 +4,14 @@
 #include <WiFiClientSecure.h>
 #include <esp_sleep.h>
 #include <Wire.h>
-#include <LiquidCrystal_I2C.h>
 #include <DHT.h>
 #include <time.h>
 
 // ---------------- PINOS ----------------
-#define PIN_TRIG 5
-#define PIN_ECHO 18
-#define PIN_DHT 4
-#define PIN_LIGADO_DESLIGADO 14
+#define PIN_TRIG  1
+#define PIN_ECHO  2
+#define PIN_DHT  3
+#define PIN_BUZZ 5
 
 #define TIPO_DHT DHT22
 
@@ -20,7 +19,6 @@
 DHT dht(PIN_DHT, TIPO_DHT);
 
 // Endereco I2C comum: 0x27
-LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 const float VELOCIDADE_SOM_CM_US = 0.0343;
 const unsigned long TIMEOUT_ECO_US = 30000;
@@ -34,14 +32,14 @@ const float LIMIAR_UMIDADE = 70.0;
 // ---------------- WIFI E API ----------------
 bool ESTADO_WIFI = false;
 
-const char *WIFI_SSID = "Wifi_Nome";
-const char *WIFI_SENHA = "Senha_Wifi";
+const char *WIFI_SSID = "Galaxy S20 FE 4B3C";
+const char *WIFI_SENHA = "rufy5911";
 const unsigned long TIMEOUT_WIFI_MS = 15000;
 
 const char *SENSOR_ID = "X0000042";
 const char *API_URL =
   "https://ocurriculo.online/api/leitura/sensor/X0000042/NIVEL";
-const char *API_KEY = "SUA_CHAVE_AQUI";
+const char *API_KEY = "jadsfdfaflka213121";
 
 const int TIMEOUT_HTTP_MS = 10000;
 
@@ -90,16 +88,6 @@ void mostrarTemperaturaSeUmido() {
   float umidade = dht.readHumidity();
   float temperatura = dht.readTemperature();
 
-  if (isnan(umidade) || isnan(temperatura)) {
-    Serial.println("Erro ao ler o DHT22.");
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("Erro no sensor");
-    lcd.setCursor(0, 1);
-    lcd.print("DHT22");
-    return;
-  }
-
   Serial.print("Temperatura: ");
   Serial.print(temperatura, 1);
   Serial.println(" C");
@@ -108,23 +96,7 @@ void mostrarTemperaturaSeUmido() {
   Serial.print(umidade, 1);
   Serial.println(" %");
 
-  if (umidade >= LIMIAR_UMIDADE) {
-    lcd.backlight();
-    lcd.clear();
 
-    lcd.setCursor(0, 0);
-    lcd.print("Umidade alta!");
-
-    lcd.setCursor(0, 1);
-    lcd.print("Temp: ");
-    lcd.print(temperatura, 1);
-    lcd.print((char)223);
-    lcd.print("C");
-  } else {
-    // Umidade abaixo do limite: apaga a iluminacao.
-    lcd.clear();
-    lcd.noBacklight();
-  }
 }
 
 // ---------------- WIFI ----------------
@@ -150,7 +122,6 @@ bool conectarWifi() {
     Serial.print("WiFi conectado. IP: ");
     Serial.println(WiFi.localIP());
 
-    digitalWrite(PIN_LIGADO_DESLIGADO, LOW);
     return true;
   }
 
@@ -258,11 +229,8 @@ void setup() {
 
   pinMode(PIN_TRIG, OUTPUT);
   pinMode(PIN_ECHO, INPUT);
-  pinMode(PIN_LIGADO_DESLIGADO, OUTPUT);
 
   Wire.begin(21, 22);
-  lcd.init();
-  lcd.noBacklight();
 
   dht.begin();
 
@@ -305,8 +273,6 @@ void setup() {
 
   // Permite visualizar o LCD antes do deep sleep.
   delay(5000);
-
-  lcd.noBacklight();
 
   entrarEmDeepSleep(intervaloSleepSegundos(nivel));
 }
