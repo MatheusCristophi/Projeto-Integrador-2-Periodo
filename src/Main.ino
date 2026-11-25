@@ -1,24 +1,22 @@
-
-#include <WiFi.h>
-#include <HTTPClient.h>
+#include <ESP8266WiFi.h>
+#include <ESP8266HTTPClient.h>
 #include <WiFiClientSecure.h>
-#include <esp_sleep.h>
 #include <Wire.h>
 #include <DHT.h>
 #include <time.h>
 
-// ---------------- PINOS ----------------
-#define PIN_TRIG  1
-#define PIN_ECHO  2
-#define PIN_DHT  3
-#define PIN_BUZZ 5
+// ---------------- PINOS ESP8266 ----------------
+// GPIOs reais, não números de pinos do ESP32
+
+#define PIN_TRIG  5   // GPIO5 - D1
+#define PIN_ECHO  4   // GPIO4 - D2
+#define PIN_DHT   14  // GPIO14 - D5
+#define PIN_BUZZ  12  // GPIO12 - D6
 
 #define TIPO_DHT DHT22
 
 // ---------------- SENSORES ----------------
 DHT dht(PIN_DHT, TIPO_DHT);
-
-// Endereco I2C comum: 0x27
 
 const float VELOCIDADE_SOM_CM_US = 0.0343;
 const unsigned long TIMEOUT_ECO_US = 30000;
@@ -26,20 +24,22 @@ const unsigned long TIMEOUT_ECO_US = 30000;
 const float LIMIAR_NIVEL2_CM = 50.0;
 const float LIMIAR_NIVEL3_CM = 20.0;
 
-// Limite de umidade relativa para ligar o LCD
 const float LIMIAR_UMIDADE = 70.0;
 
 // ---------------- WIFI E API ----------------
 bool ESTADO_WIFI = false;
 
-const char *WIFI_SSID = "Galaxy S20 FE 4B3C";
-const char *WIFI_SENHA = "rufy5911";
+const char *WIFI_SSID = "SEU_WIFI";
+const char *WIFI_SENHA = "SUA_SENHA";
+
 const unsigned long TIMEOUT_WIFI_MS = 15000;
 
 const char *SENSOR_ID = "X0000042";
+
 const char *API_URL =
   "https://ocurriculo.online/api/leitura/sensor/X0000042/NIVEL";
-const char *API_KEY = "jadsfdfaflka213121";
+
+const char *API_KEY = "SUA_API_KEY";
 
 const int TIMEOUT_HTTP_MS = 10000;
 
@@ -47,11 +47,55 @@ const int TIMEOUT_HTTP_MS = 10000;
 const uint64_t SLEEP_NIVEL1_S = 5 * 60;
 const uint64_t SLEEP_NIVEL2_S = 2 * 60;
 const uint64_t SLEEP_NIVEL3_S = 30;
+
 const uint64_t US_POR_SEGUNDO = 1000000ULL;
 
 const unsigned long TEMPO_ESTABILIZACAO_MS = 100;
 
-RTC_DATA_ATTR uint32_t contadorLeituras = 0;
+// ---------------- RTC MEMORY ----------------
+// O ESP8266 reinicia após acordar do Deep Sleep.
+// A memória RTC preserva o contador entre ciclos.
+
+uint32_t contadorLeituras = 0;
+
+struct RTCData {
+  uint32_t contador;
+  uint32_t checksum;
+};
+
+RTCData dadosRTC;
+
+// ---------------- RTC ----------------
+uint32_t calcularChecksum(uint32_t valor) {
+  return valor ^ 0xA55AA55A;
+}
+
+void carregarContadorRTC() {
+  if (ESP.rtcUserMemoryRead(
+        0,
+        (uint32_t*)&dadosRTC,
+        sizeof(dadosRTC))) {
+
+    if (dadosRTC.checksum == calcularChecksum(dadosRTC.contador)) {
+      contadorLeituras = dadosRTC.contador;
+    } else {
+      contadorLeituras = 0;
+    }
+  } else {
+    contadorLeituras = 0;
+  }
+}
+
+void salvarContadorRTC() {
+  dadosRTC.contador = contadorLeituras;
+  dadosRTC.checksum = calcularChecksum(contadorLeituras);
+
+  ESP.rtcUserMemoryWrite(
+    0,
+    (uint32_t*)&dadosRTC,
+    sizeof(dadosRTC
+  ));
+}
 
 // ---------------- ULTRASSOM ----------------
 unsigned long medirTempoEco() {
@@ -77,16 +121,26 @@ int classificarNivel(float distanciaCm) {
 
 uint64_t intervaloSleepSegundos(int nivel) {
   switch (nivel) {
-    case 3: return SLEEP_NIVEL3_S;
-    case 2: return SLEEP_NIVEL2_S;
-    default: return SLEEP_NIVEL1_S;
+    case 3:
+      return SLEEP_NIVEL3_S;
+
+    case 2:
+      return SLEEP_NIVEL2_S;
+
+    default:
+      return SLEEP_NIVEL1_S;
   }
 }
 
-// ---------------- LCD E UMIDADE ----------------
+// ---------------- TEMPERATURA E UMIDADE ----------------
 void mostrarTemperaturaSeUmido() {
   float umidade = dht.readHumidity();
   float temperatura = dht.readTemperature();
+
+  if (isnan(umidade) || isnan(temperatura)) {
+    Serial.println("Falha na leitura do DHT22.");
+    return;
+  }
 
   Serial.print("Temperatura: ");
   Serial.print(temperatura, 1);
@@ -95,8 +149,6 @@ void mostrarTemperaturaSeUmido() {
   Serial.print("Umidade: ");
   Serial.print(umidade, 1);
   Serial.println(" %");
-
-
 }
 
 // ---------------- WIFI ----------------
@@ -127,13 +179,17 @@ bool conectarWifi() {
 
   ESTADO_WIFI = false;
   Serial.println("Falha ao conectar no WiFi.");
+
   return false;
 }
 
 void desligarWifi() {
-  WiFi.disconnect(true);
+  WiFi.disconnect();
   WiFi.mode(WIFI_OFF);
+
   ESTADO_WIFI = false;
+
+  Serial.println("WiFi desligado.");
 }
 
 // ---------------- DATA E HORA ----------------
@@ -150,8 +206,12 @@ bool obterDataHora(char* destino, size_t tamanho) {
     return false;
   }
 
-  strftime(destino, tamanho, "%Y-%m-%d %H:%M:%S",
-           &infoHora);
+  strftime(
+    destino,
+    tamanho,
+    "%Y-%m-%d %H:%M:%S",
+    &infoHora
+  );
 
   return true;
 }
@@ -213,44 +273,74 @@ bool enviarLeitura(float distanciaCm, int nivel) {
     Serial.println(codigo);
 
     Serial.println(http.getString());
+
     sucesso = (codigo >= 200 && codigo < 300);
   } else {
     Serial.print("Erro HTTP: ");
-    Serial.println(HTTPClient::errorToString(codigo));
+    Serial.println(http.errorToString(codigo);
   }
 
   http.end();
+
   return sucesso;
+}
+
+// ---------------- DEEP SLEEP ----------------
+void entrarEmDeepSleep(uint64_t segundos) {
+  Serial.print("Dormindo por ");
+  Serial.print((unsigned long)segundos);
+  Serial.println(" s...");
+
+  Serial.flush();
+
+  // ESP8266 Deep Sleep
+  // GPIO16 (D0) deve ser conectado ao RST
+  ESP.deepSleep(segundos * US_POR_SEGUNDO, WAKE_RF_DISABLED);
 }
 
 // ---------------- SETUP ----------------
 void setup() {
   Serial.begin(115200);
+  delay(100);
+
+  Serial.println();
+  Serial.println("Inicializando ESP8266 ESP-12E...");
 
   pinMode(PIN_TRIG, OUTPUT);
   pinMode(PIN_ECHO, INPUT);
+  pinMode(PIN_BUZZ, OUTPUT);
 
-  Wire.begin(21, 22);
+  digitalWrite(PIN_TRIG, LOW);
+  digitalWrite(PIN_BUZZ, LOW);
 
+  // Inicializa sensor DHT22
   dht.begin();
 
+  // Recupera contador da memoria RTC
+  carregarContadorRTC();
+
   contadorLeituras++;
+  salvarContadorRTC();
+
   Serial.print("Leitura #");
   Serial.println(contadorLeituras);
 
   delay(TEMPO_ESTABILIZACAO_MS);
 
-  // Leitura de temperatura e umidade
+  // Leitura temperatura e umidade
   mostrarTemperaturaSeUmido();
 
-  // Leitura do nivel da agua
+  // ---------------- LEITURA DO NIVEL ----------------
   unsigned long tempoUs = medirTempoEco();
+
   int nivel = 1;
+  float distanciaCm = -1;
 
   if (tempoUs == 0) {
     Serial.println("Sem eco ou erro de leitura.");
   } else {
-    float distanciaCm = tempoParaDistanciaCm(tempoUs);
+    distanciaCm = tempoParaDistanciaCm(tempoUs);
+
     nivel = classificarNivel(distanciaCm);
 
     Serial.print("Distancia: ");
@@ -258,6 +348,7 @@ void setup() {
     Serial.print(" cm | Nivel: ");
     Serial.println(nivel);
 
+    // ---------------- WIFI E ENVIO ----------------
     if (conectarWifi()) {
       bool enviado = enviarLeitura(distanciaCm, nivel);
 
@@ -269,23 +360,14 @@ void setup() {
     }
   }
 
+  // Desliga WiFi
   desligarWifi();
 
-  // Permite visualizar o LCD antes do deep sleep.
-  delay(5000);
+  // Pequena pausa antes do Deep Sleep
+  delay(1000);
 
+  // Dorme conforme nivel
   entrarEmDeepSleep(intervaloSleepSegundos(nivel));
-}
-
-void entrarEmDeepSleep(uint64_t segundos) {
-  Serial.print("Dormindo por ");
-  Serial.print((unsigned long)segundos);
-  Serial.println(" s...");
-
-  Serial.flush();
-
-  esp_sleep_enable_timer_wakeup(segundos * US_POR_SEGUNDO);
-  esp_deep_sleep_start();
 }
 
 void loop() {
